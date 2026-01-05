@@ -162,7 +162,32 @@ in
       example = lib.literalExpression ''
         { allowBroken = true; allowUnfree = true; }
       '';
-      type = configType;
+
+      # TODO: functionTo nixpkgsConfigType would fail to merge
+      type =
+        with lib.types;
+        let
+          nixpkgsConfigType = submodule {
+            freeformType = attrsOf lib.types.any;
+            options = {
+              allowUnfreePredicate = lib.mkOption {
+                default = _: false;
+                type = functionTo bool;
+              };
+              # packageOverrides = lib.mkOption {
+              #   default = lib.id;
+              # };
+              # perlPackageOverrides = lib.mkOption {
+              #   default = lib.id;
+              # };
+            };
+          };
+        in
+        # either (functionTo nixpkgsConfigType)
+        # nixpkgsConfigType
+
+        coercedTo nixpkgsConfigType lib.const (functionTo nixpkgsConfigType);
+
       description = ''
         Global configuration for Nixpkgs.
         The complete list of [Nixpkgs configuration options](https://nixos.org/manual/nixpkgs/unstable/#sec-config-options-reference) is in the [Nixpkgs manual section on global configuration](https://nixos.org/manual/nixpkgs/unstable/#chap-packageconfig).
