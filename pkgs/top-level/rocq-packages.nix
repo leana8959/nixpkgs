@@ -19,6 +19,21 @@ let
     self: rocq-core:
     let
       callPackage = self.callPackage;
+
+      # The 'finalDrv' argument refers to the package in the scope.
+      # When drv is overridden, the withPackages won't follow the modification otherwise.
+      mkWithPackages =
+        drv: finalDrv:
+        drv.overrideAttrs (oldAttrs: {
+          passthru = (oldAttrs.passthru or { }) // {
+            withPackages =
+              f:
+              (callPackage ../applications/science/logic/coq/with-packages.nix {
+                coq = finalDrv;
+              })
+                (f self);
+          };
+        });
     in
     {
       inherit lib;
@@ -37,13 +52,17 @@ let
       };
       mkRocqDerivation = lib.makeOverridable (callPackage ../build-support/rocq { });
 
-      coq = callPackage ../applications/science/logic/coq {
-        ocamlPackages_4_09 = null;
-        ocamlPackages_4_10 = null;
-        ocamlPackages_4_12 = null;
-        inherit ocamlPackages_4_14 ocamlPackages_5_5;
-        inherit (rocq-core) version;
-      };
+      coq =
+        let
+          thisCoq = callPackage ../applications/science/logic/coq {
+            ocamlPackages_4_09 = null;
+            ocamlPackages_4_10 = null;
+            ocamlPackages_4_12 = null;
+            inherit ocamlPackages_4_14 ocamlPackages_5_5;
+            inherit (self.rocq-core) version;
+          };
+        in
+        mkWithPackages thisCoq self.coq;
 
       mkCoqDerivation =
         args:
@@ -55,16 +74,7 @@ let
           // args
         );
 
-      rocq-core = rocq-core.overrideAttrs (oldAttrs: {
-        passthru = (oldAttrs.passthru or { }) // {
-          withPackages =
-            f:
-            (callPackage ../applications/science/logic/coq/with-packages.nix {
-              coq = rocq-core;
-            })
-              (f self);
-        };
-      });
+      rocq-core = mkWithPackages rocq-core self.rocq-core;
 
       contribs = lib.recurseIntoAttrs (callPackage ../development/rocq-modules/contribs { });
 
