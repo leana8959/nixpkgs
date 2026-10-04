@@ -15,8 +15,6 @@ let
 
   ly = cfg.package.override { x11Support = cfg.x11Support; };
 
-  iniFmt = pkgs.formats.iniWithGlobalSection { };
-
   inherit (lib)
     attrNames
     concatMapStrings
@@ -58,17 +56,32 @@ let
 
   finalConfig = defaultConfig // cfg.settings;
 
+  toLua = content: lib.generators.toLua { multiline = true; } content;
+  iniFmt = pkgs.formats.iniWithGlobalSection { };
+
   cfgFile =
     let
-      origCfgFile = iniFmt.generate "config.ini" { globalSection = finalConfig; };
+      showWith = f: x: builtins.trace (f x) x;
+      show = showWith (x: x);
+
+      # origCfgFile = pkgs.writeText "config.lua" (show ''
+      #   ${cfg.extraLuaConfig}
+      #   ly = ${toLua finalConfig}
+      # '');
+
+      origCfgFile = showWith (x: x.outPath) (iniFmt.generate "config.ini" { globalSection = finalConfig; });
+
+      # TODO(leana8959): the validation no longer works when using lua.
+      # TODO(leana8959): the configuration no longer works when using lua.
+      out = pkgs.runCommandLocal "validated-config.lua" { } ''
+        cat ${origCfgFile} > $out
+        if ! ${lib.getExe ly} --validate-config $out; then
+          echo "Your generated configuration for ly the display manager is invalid."
+          exit 1
+        fi
+      '';
     in
-    pkgs.runCommandLocal "validated-config.ini" { } ''
-      cat ${origCfgFile} > $out
-      if ! ${lib.getExe ly} --validate-config $out; then
-        echo "Your generated configuration for ly the display manager is invalid."
-        exit 1
-      fi
-    '';
+    out;
 in
 {
   options = {
@@ -83,7 +96,8 @@ in
       package = mkPackageOption pkgs [ "ly" ] { };
 
       settings = mkOption {
-        type = with lib.types; attrsOf iniFmt.lib.types.atom;
+        # TODO(leana8959): Let ly do validation.
+        # type = with lib.types; attrsOf iniFmt.lib.types.atom;
         default = { };
         example = {
           load = false;
@@ -92,6 +106,12 @@ in
         description = ''
           Extra settings merged in and overwriting defaults in config.ini.
         '';
+      };
+
+      extraLuaConfig = mkOption {
+        type = lib.types.lines;
+        default = "";
+        description = "Extra lua config that is prepended to the final output.";
       };
     };
   };
